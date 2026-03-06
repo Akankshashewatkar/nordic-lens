@@ -57,4 +57,10 @@ airflow/*.pid
 Thumbs.db
 
 # Claude AI
-.claude/settings.local.json.streamlit/secrets.toml
+.claude/settings.local.json
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Raw data (large Parquet files)
+data/
