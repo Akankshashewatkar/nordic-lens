@@ -1,0 +1,83 @@
+name: dbt CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "dbt_project/**"
+      - ".github/workflows/dbt_ci.yml"
+
+jobs:
+  dbt-ci:
+    name: dbt compile + staging smoke test
+    runs-on: ubuntu-latest
+
+    env:
+      SNOWFLAKE_ACCOUNT:    ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER:       ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD:   ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE:       ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE:  ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      SNOWFLAKE_DATABASE:   ${{ secrets.SNOWFLAKE_DATABASE }}
+      DBT_PROFILES_DIR:     ${{ github.workspace }}/dbt_project
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Write dbt profiles.yml
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<EOF
+          nordiclens:
+            target: ci
+            outputs:
+              ci:
+                type: snowflake
+                account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+                user: ${{ secrets.SNOWFLAKE_USER }}
+                password: ${{ secrets.SNOWFLAKE_PASSWORD }}
+                role: ${{ secrets.SNOWFLAKE_ROLE }}
+                warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+                database: ${{ secrets.SNOWFLAKE_DATABASE }}
+                schema: CI_${{ github.event.pull_request.number }}
+                threads: 4
+          EOF
+
+      - name: dbt deps
+        working-directory: dbt_project
+        run: uv run dbt deps
+
+      - name: dbt compile
+        working-directory: dbt_project
+        run: uv run dbt compile
+
+      - name: dbt test — staging smoke test
+        id: dbt_test
+        working-directory: dbt_project
+        run: |
+          uv run dbt test --select staging 2>&1 | tee dbt_test_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Comment test results on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('dbt_project/dbt_test_output.txt', 'utf8');
+            const status = '${{ steps.dbt_test.outputs.exit_code }}' === '0' ? '✅ All staging tests passed' : '❌ Some staging tests failed';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## dbt CI Results\n\n${status}\n\n<details><summary>Full output</summary>\n\n\`\`\`\n${output}\n\`\`\`\n</details>`
+            });

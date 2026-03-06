@@ -1,0 +1,72 @@
+[project]
+name = "nordiclens"
+version = "0.1.0"
+description = "Production-grade ELT pipeline for Norwegian banking transaction analytics"
+requires-python = ">=3.11"
+dependencies = [
+    # Core
+    "python-dotenv>=1.0.1",
+
+    # Data / Ingestion
+    "requests>=2.31.0",
+    "pandas>=2.2.2",
+    "pyarrow>=15.0.2",
+    "faker>=24.3.0",
+    "numpy>=1.26.4",
+    "scipy>=1.13.0",
+
+    # AWS
+    "boto3>=1.34.69",
+    "s3fs>=2024.3.1",
+
+    # Snowflake
+    "snowflake-connector-python>=3.9.1",
+    "snowflake-sqlalchemy>=1.5.3",
+
+    # dbt
+    "dbt-core>=1.8.3",
+    "dbt-snowflake>=1.8.3",
+
+    # Dashboard
+    "streamlit>=1.35.0",
+    "plotly>=5.22.0",
+    "altair>=5.3.0",
+]
+
+[project.optional-dependencies]
+# Airflow is heavy; run via Docker Compose in local dev (see airflow/docker-compose.yml)
+airflow = [
+    "apache-airflow>=2.9.1",
+    "apache-airflow-providers-snowflake>=5.3.1",
+    "apache-airflow-providers-amazon>=8.20.0",
+]
+
+[dependency-groups]
+# Installed by default with `uv sync`; skipped with `uv sync --no-dev`
+dev = [
+    "pytest>=8.2.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.4.4",
+]
+
+[project.scripts]
+nordiclens-ingest   = "ingestion.extractors.ssb_api:main"
+nordiclens-simulate = "ingestion.extractors.transaction_simulator:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ingestion"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

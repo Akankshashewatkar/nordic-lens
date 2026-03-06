@@ -1,0 +1,53 @@
+name: nordiclens
+version: "1.0.0"
+config-version: 2
+
+profile: nordiclens
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  nordiclens:
+    staging:
+      +schema: STAGING
+      +materialized: view
+      +tags: ["staging"]
+
+    intermediate:
+      +schema: INTERMEDIATE
+      +materialized: ephemeral
+      +tags: ["intermediate"]
+
+    marts:
+      +schema: MARTS
+      +materialized: table
+      +tags: ["marts"]
+      rpt_financial_health_kpis:
+        +materialized: table
+        +post-hook: "GRANT SELECT ON {{ this }} TO ROLE NORDICLENS_REPORTER"
+
+snapshots:
+  nordiclens:
+    +target_schema: SNAPSHOTS
+    +strategy: timestamp
+    +updated_at: updated_at
+
+vars:
+  nordiclens_start_date: "2023-01-01"
+  anomaly_stddev_threshold: 3
+  velocity_window_minutes: 10
+  velocity_count_threshold: 3
+  late_night_start_hour: 0
+  late_night_end_hour: 5
+  large_round_amount_threshold: 50000
+  suspicious_late_night_amount: 5000

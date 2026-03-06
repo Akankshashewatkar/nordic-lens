@@ -1,0 +1,73 @@
+version: 2
+
+models:
+  - name: int_transactions_enriched
+    description: >
+      Enriched transaction grain — joins staged transactions with customer demographics
+      and adds derived temporal/behavioural fields (rolling averages, recency).
+    columns:
+      - name: transaction_id
+        description: UUID primary key.
+        tests: [not_null, unique]
+      - name: is_round_amount
+        description: True if amount_nok is divisible by 1,000 (anomaly signal).
+        tests: [not_null]
+      - name: is_late_night
+        description: True if the transaction occurred between 00:00 and 04:59.
+        tests: [not_null]
+      - name: rolling_7d_avg_amount
+        description: 7-day rolling average transaction amount for the same customer.
+      - name: days_since_last_txn
+        description: Days elapsed since the customer's previous transaction (NULL for first).
+
+  - name: int_customer_segments
+    description: >
+      RFM-based customer segmentation. Computes Recency, Frequency, and Monetary
+      scores and assigns qualitative segment labels.
+    columns:
+      - name: customer_id
+        description: UUID primary key.
+        tests: [not_null, unique]
+      - name: rfm_segment
+        description: >
+          Qualitative segment label derived from RFM quartile scores.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Champions', 'Loyal', 'At Risk', 'New', 'Dormant', 'Potential Loyalist']
+      - name: recency_days
+        description: Days since last transaction.
+        tests: [not_null]
+      - name: frequency
+        description: Total number of transactions.
+        tests: [not_null]
+      - name: monetary_value
+        description: Total spend in NOK.
+        tests: [not_null]
+
+  - name: int_anomaly_flags
+    description: >
+      Rule-based anomaly flags per transaction. Five flag types are applied
+      using configurable dbt variables.
+    columns:
+      - name: transaction_id
+        description: UUID primary key.
+        tests: [not_null, unique]
+      - name: is_statistical_outlier
+        description: True if amount > customer_avg + 3 * customer_stddev.
+        tests: [not_null]
+      - name: is_velocity_spike
+        description: True if 3+ transactions from same customer within 10 minutes.
+        tests: [not_null]
+      - name: is_large_round_amount
+        description: True if amount is a multiple of 1,000 and exceeds 50,000 NOK.
+        tests: [not_null]
+      - name: is_suspicious_late_night
+        description: True if transaction is between 00:00–04:59 and amount > 5,000 NOK.
+        tests: [not_null]
+      - name: is_unusual_geography
+        description: True if a domestic-only customer transacts outside Norway.
+        tests: [not_null]
+      - name: has_any_anomaly_flag
+        description: Convenience OR across all five flag columns.
+        tests: [not_null]

@@ -1,0 +1,100 @@
+version: 2
+
+models:
+  - name: stg_transactions
+    description: >
+      Staged transactions — type-cast and lightly cleaned 1:1 view over RAW.TRANSACTIONS.
+      No business logic; safe for all downstream consumers.
+    columns:
+      - name: transaction_id
+        description: UUID primary key.
+        tests: [not_null, unique]
+      - name: customer_id
+        description: Foreign key to stg_customers.
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
+      - name: amount_nok
+        description: Transaction amount in Norwegian Krone. Always > 0 after filter.
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              strictly: true
+      - name: transaction_type
+        description: "debit | credit | transfer"
+        tests:
+          - accepted_values:
+              values: ['debit', 'credit', 'transfer']
+      - name: channel
+        description: "mobile | atm | online | branch"
+        tests:
+          - accepted_values:
+              values: ['mobile', 'atm', 'online', 'branch']
+      - name: currency
+        description: ISO 4217 currency code. Defaults to NOK.
+        tests: [not_null]
+      - name: transaction_date
+        description: Timestamp (UTC) when the transaction was processed.
+        tests: [not_null]
+      - name: hour_of_day
+        description: Hour component of transaction_date (0–23).
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 23
+      - name: country_code
+        description: ISO 3166-1 alpha-2 country code of the merchant.
+        tests: [not_null]
+      - name: mcc_code
+        description: 4-digit Merchant Category Code (ISO 18245).
+        tests: [not_null]
+      - name: is_flagged
+        description: Simulator-injected fraud flag (ground truth for model evaluation).
+        tests: [not_null]
+
+  - name: stg_customers
+    description: >
+      Staged customers — type-cast and normalised 1:1 view over RAW.CUSTOMERS.
+    columns:
+      - name: customer_id
+        description: UUID primary key.
+        tests: [not_null, unique]
+      - name: age
+        description: Derived age in years from date_of_birth.
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 18
+              max_value: 100
+      - name: gender
+        description: "M | F | U"
+        tests:
+          - accepted_values:
+              values: ['M', 'F', 'U']
+      - name: is_domestic_only
+        description: True if the customer has never transacted internationally.
+        tests: [not_null]
+
+  - name: stg_macro_rates
+    description: >
+      Union of SSB CPI index and Norges Bank key policy rate, normalised
+      into a single tidy time-series table with a rate_type discriminator.
+    columns:
+      - name: period
+        description: First day of the observation month.
+        tests: [not_null]
+      - name: value
+        description: Numeric value of the indicator.
+        tests: [not_null]
+      - name: rate_type
+        description: "cpi_index | policy_rate_pct"
+        tests:
+          - accepted_values:
+              values: ['cpi_index', 'policy_rate_pct']
+      - name: source
+        description: "SSB | NORGES_BANK"
+        tests:
+          - accepted_values:
+              values: ['SSB', 'NORGES_BANK']

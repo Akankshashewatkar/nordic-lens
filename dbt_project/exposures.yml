@@ -1,0 +1,22 @@
+version: 2
+
+exposures:
+  - name: nordiclens_dashboard
+    label: NordicLens Streamlit Dashboard
+    type: application
+    maturity: medium
+    url: http://localhost:8501
+
+    description: >
+      Streamlit dashboard providing executive KPIs, transaction explorer,
+      anomaly intelligence, and Norwegian macro context to banking analysts.
+
+    depends_on:
+      - ref('fct_transactions')
+      - ref('dim_customers')
+      - ref('dim_merchants')
+      - ref('rpt_financial_health_kpis')
+
+    owner:
+      name: NordicLens Data Team
+      email: data@nordiclens.no

@@ -1,0 +1,114 @@
+version: 2
+
+models:
+  - name: fct_transactions
+    description: >
+      Core fact table — consumption-ready transaction grain with surrogate keys,
+      all anomaly flags, and customer RFM segment at time of query.
+      Clustered by transaction_date for efficient date-range scans.
+    columns:
+      - name: transaction_sk
+        description: Surrogate key (SHA-256 of transaction_id).
+        tests: [not_null, unique]
+      - name: customer_sk
+        description: Surrogate key for customer dimension join.
+        tests: [not_null]
+      - name: merchant_sk
+        description: Surrogate key for merchant dimension join.
+        tests: [not_null]
+      - name: transaction_id
+        description: Natural key UUID.
+        tests: [not_null, unique]
+      - name: amount_nok
+        description: Transaction amount in NOK. Always > 0.
+        tests:
+          - not_null
+          - assert_transaction_amount_positive
+      - name: rfm_segment
+        description: Customer segment label at time of query.
+      - name: has_any_anomaly_flag
+        description: True if any of the five anomaly rules fired.
+        tests: [not_null]
+
+  - name: dim_customers
+    description: >
+      Customer dimension with current RFM segment. Historical segment changes
+      are tracked via SCD Type 2 in the SNAPSHOTS schema (customer_snapshot).
+    columns:
+      - name: customer_sk
+        description: Surrogate key.
+        tests: [not_null, unique]
+      - name: customer_id
+        description: Natural key UUID.
+        tests: [not_null, unique]
+      - name: rfm_segment
+        description: Current RFM segment label.
+        tests:
+          - accepted_values:
+              values: ['Champions', 'Loyal', 'At Risk', 'New', 'Dormant', 'Potential Loyalist']
+      - name: recency_days
+        description: Days since last transaction.
+      - name: total_spend_nok
+        description: Lifetime spend in NOK.
+
+  - name: dim_merchants
+    description: >
+      Merchant dimension deduplicated from transaction history,
+      enriched with MCC group rollup for dashboard filtering.
+    columns:
+      - name: merchant_sk
+        description: Surrogate key.
+        tests: [not_null, unique]
+      - name: merchant_id
+        description: Natural key UUID.
+        tests: [not_null, unique]
+      - name: mcc_code
+        description: 4-digit Merchant Category Code.
+        tests: [not_null]
+      - name: mcc_group
+        description: Simplified category group for dashboard roll-ups.
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - 'Essential Retail'
+                - 'Travel & Transport'
+                - 'Food & Dining'
+                - 'Entertainment'
+                - 'Utilities & Telecom'
+                - 'Healthcare'
+                - 'Government'
+                - 'Other'
+
+  - name: rpt_financial_health_kpis
+    description: >
+      Monthly financial health KPI report correlated with Norwegian macro indicators.
+      Primary source for the Executive KPIs and Macro Context dashboard pages.
+    columns:
+      - name: report_month
+        description: First day of the calendar month.
+        tests: [not_null, unique]
+      - name: total_volume_nok
+        description: Gross transaction volume in NOK for the month.
+        tests: [not_null]
+      - name: avg_transaction_nok
+        description: Mean transaction value in NOK.
+        tests: [not_null]
+      - name: transaction_count
+        description: Total number of transactions in the month.
+        tests: [not_null]
+      - name: active_customer_count
+        description: Count of distinct customers who transacted in the month.
+        tests: [not_null]
+      - name: fraud_rate_pct
+        description: Percentage of transactions flagged as fraud.
+        tests: [not_null]
+      - name: anomaly_rate_pct
+        description: Percentage of transactions with at least one anomaly flag.
+        tests: [not_null]
+      - name: customer_churn_risk_count
+        description: Customers with recency_days > 90 (churn risk signal).
+      - name: norges_bank_rate
+        description: Norges Bank key policy rate for the month (%).
+      - name: cpi_index
+        description: SSB CPI index for the month (base 2015 = 100).
