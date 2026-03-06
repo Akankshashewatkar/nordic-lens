@@ -1,0 +1,193 @@
+---
+# NordicLens CI — runs on every pull request targeting main
+#
+# Jobs:
+#   lint        — ruff check + ruff format (fast gate, ~10s)
+#   unit-tests  — pytest (no external dependencies)
+#   dbt-ci      — dbt compile + staging smoke test against ephemeral Snowflake schema
+#                 Posts test results as a PR comment; cleans up the CI schema on exit.
+#
+# dbt-ci requires Snowflake credentials in repository secrets:
+#   SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD,
+#   SNOWFLAKE_ROLE, SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "dbt_project/**"
+      - "ingestion/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/ci.yml"
+
+# Cancel in-flight runs for the same PR (saves Snowflake credits)
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Lint & format check ──────────────────────────────────────────────────────
+  lint:
+    name: Lint & format (ruff)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: uv sync --group dev
+
+      - name: ruff lint
+        run: uv run ruff check .
+
+      - name: ruff format check
+        run: uv run ruff format --check .
+
+  # ── Unit tests ───────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit tests (pytest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run pytest
+        run: uv run pytest tests/ -v --tb=short
+
+  # ── dbt CI ───────────────────────────────────────────────────────────────────
+  dbt-ci:
+    name: dbt compile + staging smoke test
+    runs-on: ubuntu-latest
+    needs: [lint]  # block on lint; unit-tests runs in parallel
+
+    env:
+      SNOWFLAKE_ACCOUNT:   ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER:      ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD:  ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE:      ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      SNOWFLAKE_DATABASE:  ${{ secrets.SNOWFLAKE_DATABASE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync
+
+      # Write an ephemeral dbt profile scoped to this PR's schema (CI_<PR#>).
+      # Using <<EOF (not <<'EOF') so ${{ }} expressions are substituted by Actions runner
+      # before the shell sees the heredoc — no shell variable interpolation risk.
+      - name: Write ephemeral dbt profile
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml <<EOF
+          nordiclens:
+            target: ci
+            outputs:
+              ci:
+                type: snowflake
+                account: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+                user: ${{ secrets.SNOWFLAKE_USER }}
+                password: ${{ secrets.SNOWFLAKE_PASSWORD }}
+                role: ${{ secrets.SNOWFLAKE_ROLE }}
+                warehouse: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+                database: ${{ secrets.SNOWFLAKE_DATABASE }}
+                schema: CI_${{ github.event.pull_request.number }}
+                threads: 4
+          EOF
+
+      - name: dbt deps
+        working-directory: dbt_project
+        run: uv run dbt deps
+
+      - name: dbt compile
+        working-directory: dbt_project
+        run: uv run dbt compile
+
+      # continue-on-error keeps the job alive so the PR comment and cleanup steps
+      # still run even when tests fail. The explicit "Fail if tests failed" step
+      # at the end ensures the overall job status is correctly reported as failed.
+      - name: dbt test — staging smoke test
+        id: dbt_test
+        working-directory: dbt_project
+        continue-on-error: true
+        run: |
+          uv run dbt test --select staging 2>&1 | tee dbt_test_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-test-results-pr-${{ github.event.pull_request.number }}
+          path: dbt_project/dbt_test_output.txt
+          retention-days: 14
+
+      - name: Comment test results on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('dbt_project/dbt_test_output.txt', 'utf8');
+            const passed = '${{ steps.dbt_test.outputs.exit_code }}' === '0';
+            const status = passed
+              ? '### dbt CI Results\n\n✅ All staging tests passed'
+              : '### dbt CI Results\n\n❌ Some staging tests failed';
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `${status}\n\n<details><summary>Full output</summary>\n\n\`\`\`\n${output}\n\`\`\`\n</details>`,
+            });
+
+      # Always drop the ephemeral CI schema, even if earlier steps failed.
+      - name: Drop ephemeral CI schema
+        if: always()
+        run: |
+          uv run python - <<'PYEOF'
+          import os
+          import snowflake.connector
+
+          conn = snowflake.connector.connect(
+              account=os.environ["SNOWFLAKE_ACCOUNT"],
+              user=os.environ["SNOWFLAKE_USER"],
+              password=os.environ["SNOWFLAKE_PASSWORD"],
+              role=os.environ.get("SNOWFLAKE_ROLE", "NORDICLENS_ROLE"),
+              warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "NORDICLENS_WH"),
+              database=os.environ.get("SNOWFLAKE_DATABASE", "NORDICLENS_DB"),
+          )
+          schema = "CI_${{ github.event.pull_request.number }}"
+          try:
+              conn.cursor().execute(
+                  f"DROP SCHEMA IF EXISTS {os.environ['SNOWFLAKE_DATABASE']}.{schema} CASCADE"
+              )
+              print(f"Dropped schema {schema}")
+          finally:
+              conn.close()
+          PYEOF
+
+      # Propagate test failure to the overall job after cleanup + comment.
+      - name: Fail if dbt tests failed
+        if: steps.dbt_test.outputs.exit_code != '0'
+        run: |
+          echo "dbt staging tests failed — see comment on PR for details"
+          exit 1

@@ -16,7 +16,6 @@
     - NO customer segmentation — that lives in int_customer_segments
 #}
 
--- TODO (Phase 4): implement staging SQL
 select
     customer_id::varchar(36)                            as customer_id,
     first_name::varchar(100)                            as first_name,

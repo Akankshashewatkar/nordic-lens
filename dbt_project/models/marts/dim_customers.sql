@@ -11,7 +11,6 @@
   SCD Type 2 history tracked via customer_snapshot.sql in snapshots/.
 #}
 
--- TODO (Phase 4): implement dimension SQL
 with customers as (
     select * from {{ ref('stg_customers') }}
 ),
@@ -22,7 +21,7 @@ segments as (
 
 final as (
     select
-        {{ generate_surrogate_key(['c.customer_id']) }}   as customer_sk,
+        {{ generate_surrogate_key(['customer_id']) }}     as customer_sk,
         c.customer_id,
         c.first_name,
         c.last_name,

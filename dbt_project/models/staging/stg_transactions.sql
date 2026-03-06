@@ -16,7 +16,6 @@
     - NO business logic — that lives in intermediate/
 #}
 
--- TODO (Phase 4): implement staging SQL
 select
     transaction_id::varchar(36)                         as transaction_id,
     customer_id::varchar(36)                            as customer_id,

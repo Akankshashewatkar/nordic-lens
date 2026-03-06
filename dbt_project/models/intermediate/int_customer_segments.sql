@@ -16,7 +16,6 @@
     - Dormant    : no transactions in 180+ days
 #}
 
--- TODO (Phase 4): implement RFM segmentation SQL
 with rfm_raw as (
     select
         customer_id,

@@ -2,7 +2,7 @@
     config(
         materialized  = 'table',
         schema        = 'MARTS',
-        cluster_by    = ['transaction_date::date'],
+        cluster_by    = ['DATE(transaction_date)'],
         tags          = ['marts', 'core']
     )
 }}
@@ -14,7 +14,6 @@
   Adds surrogate keys via generate_surrogate_key macro.
 #}
 
--- TODO (Phase 4): implement fact table SQL
 with transactions as (
     select * from {{ ref('int_transactions_enriched') }}
 ),
@@ -27,12 +26,9 @@ customer_segments as (
     select * from {{ ref('int_customer_segments') }}
 ),
 
-final as (
+-- Resolve all joins first so surrogate key macros see unambiguous column names
+joined as (
     select
-        {{ generate_surrogate_key(['t.transaction_id']) }}    as transaction_sk,
-        {{ generate_surrogate_key(['t.customer_id']) }}       as customer_sk,
-        {{ generate_surrogate_key(['t.merchant_id']) }}       as merchant_sk,
-
         t.transaction_id,
         t.customer_id,
         t.merchant_id,
@@ -49,29 +45,30 @@ final as (
         t.country_code,
         t.channel,
         t.is_flagged                                          as is_simulated_fraud,
-
-        -- Enriched derived fields
         t.is_round_amount,
         t.is_late_night,
         t.rolling_7d_avg_amount,
         t.days_since_last_txn,
-
-        -- Customer segment at time of transaction
         cs.rfm_segment,
-
-        -- Anomaly flags
         af.is_statistical_outlier,
         af.is_velocity_spike,
         af.is_large_round_amount,
         af.is_suspicious_late_night,
         af.is_unusual_geography,
-        af.has_any_anomaly_flag,
-
-        current_timestamp()                                   as _loaded_at
-
+        af.has_any_anomaly_flag
     from transactions t
-    left join anomaly_flags  af using (transaction_id)
-    left join customer_segments cs using (customer_id)
+    left join anomaly_flags    af on af.transaction_id = t.transaction_id
+    left join customer_segments cs on cs.customer_id   = t.customer_id
+),
+
+final as (
+    select
+        {{ generate_surrogate_key(['transaction_id']) }}      as transaction_sk,
+        {{ generate_surrogate_key(['customer_id']) }}         as customer_sk,
+        {{ generate_surrogate_key(['merchant_id']) }}         as merchant_sk,
+        *,
+        current_timestamp()                                   as _loaded_at
+    from joined
 )
 
 select * from final

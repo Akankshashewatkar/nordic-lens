@@ -10,7 +10,6 @@
   Merchant dimension — deduplicated merchant entities enriched with MCC metadata.
 #}
 
--- TODO (Phase 4): implement dimension SQL
 with merchants as (
     select distinct
         merchant_id,

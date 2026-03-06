@@ -68,8 +68,8 @@ sources:
           - name: period
             description: Observation month (YYYY-MM-DD, first of month).
             tests: [not_null, unique]
-          - name: value
-            description: CPI index value (base year = 2015).
+          - name: cpi_index
+            description: CPI index value (base year = 1998).
             tests: [not_null]
 
       - name: macro_rates

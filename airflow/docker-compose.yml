@@ -7,7 +7,7 @@
 #     --role Admin --email admin@nordiclens.no --password admin
 
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.9.1-python3.11
+  build: .                                      # uses airflow/Dockerfile
   env_file: ../.env
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -16,12 +16,15 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
     PYTHONPATH: /opt/airflow
+    DBT_PROFILES_DIR: /opt/airflow/dbt_profiles
   volumes:
     - ./dags:/opt/airflow/dags
+    - ./dbt_profiles:/opt/airflow/dbt_profiles  # dbt profiles.yml (env-var driven)
     - airflow-logs:/opt/airflow/logs
     - airflow-plugins:/opt/airflow/plugins
-    - ../ingestion:/opt/airflow/ingestion       # mount source code
-    - ~/.aws:/home/airflow/.aws:ro               # AWS credentials
+    - ../ingestion:/opt/airflow/ingestion       # ingestion package (mounted, not installed)
+    - ../dbt_project:/opt/airflow/dbt_project   # dbt project source
+    - ~/.aws:/home/airflow/.aws:ro               # AWS credentials (read-only)
   depends_on:
     postgres:
       condition: service_healthy

@@ -13,13 +13,12 @@
   Adds a `rate_type` discriminator column: 'cpi_index' | 'policy_rate_pct'
 #}
 
--- TODO (Phase 4): implement staging SQL
 select
-    period::date                as period,
-    value::number(12, 4)        as value,
-    'cpi_index'::varchar(20)    as rate_type,
-    'SSB'::varchar(20)          as source,
-    current_timestamp()         as _loaded_at
+    period::date                    as period,
+    cpi_index::number(12, 4)        as value,   -- renamed: cpi_index → value for union compatibility
+    'cpi_index'::varchar(20)        as rate_type,
+    'SSB'::varchar(20)              as source,
+    current_timestamp()             as _loaded_at
 from {{ source('raw', 'macro_cpi') }}
 where period is not null
 

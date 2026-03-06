@@ -106,8 +106,11 @@ models:
       - name: anomaly_rate_pct
         description: Percentage of transactions with at least one anomaly flag.
         tests: [not_null]
+      - name: top_merchant_category
+        description: Highest-volume MCC category for the month by transaction count.
+        tests: [not_null]
       - name: customer_churn_risk_count
-        description: Customers with recency_days > 90 (churn risk signal).
+        description: Customers with recency_days > 90 at time of report generation.
       - name: norges_bank_rate
         description: Norges Bank key policy rate for the month (%).
       - name: cpi_index

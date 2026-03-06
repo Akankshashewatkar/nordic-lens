@@ -16,7 +16,6 @@
     5. unusual_geography       : foreign txn for a domestic-only customer
 #}
 
--- TODO (Phase 4): implement anomaly flagging SQL
 with enriched as (
     select * from {{ ref('int_transactions_enriched') }}
 ),
